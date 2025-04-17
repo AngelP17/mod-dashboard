@@ -1,5 +1,9 @@
-import React, { useState } from 'react';
+// src/components/ModerationDashboard.jsx
+import React, { useState, useEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { ThemeToggle } from './ThemeToggle';
+import { useRequests } from './RequestContext';
+import FileViewer from './FileViewer';
 
 import { 
   AlertCircle, 
@@ -12,7 +16,8 @@ import {
   Users,
   Settings,
   LogOut,
-  Menu
+  Menu,
+  PlusCircle
 } from 'lucide-react';
 import { Button } from './ui/Button';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from './ui/Card';
@@ -24,37 +29,23 @@ export const ModeratorDashboard = () => {
   // State management
   const [user, setUser] = useState(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const [requests, setRequests] = useState([
-    {
-      id: 1,
-      email: "creator@example.com",
-      url: "https://example.com/content",
-      timestamp: "2025-02-03T10:30:00",
-      description: "Website no longer active - requesting removal",
-      proofOfOwnership: "domain-verification.pdf",
-      status: "pending",
-      notes: "",
-      contentType: "website",
-      ownershipVerified: false,
-      priority: "medium"
-    },
-    {
-      id: 2,
-      email: "publisher@example.com",
-      url: "https://example.com/archived-content",
-      timestamp: "2025-02-03T09:15:00",
-      description: "DMCA takedown request - copyrighted material",
-      proofOfOwnership: "copyright-certificate.pdf",
-      status: "pending",
-      notes: "",
-      contentType: "media",
-      ownershipVerified: true,
-      priority: "high"
-    }
-  ]);
+  const { requests, updateRequest, getStats, getFile } = useRequests();
   const [selectedRequest, setSelectedRequest] = useState(null);
   const [filterStatus, setFilterStatus] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
+  const [viewingFile, setViewingFile] = useState(null);
+
+  // Update selectedRequest when requests change
+  useEffect(() => {
+    if (selectedRequest) {
+      const updatedRequest = requests.find(r => r.id === selectedRequest.id);
+      if (updatedRequest) {
+        setSelectedRequest(updatedRequest);
+      } else {
+        setSelectedRequest(null);
+      }
+    }
+  }, [requests, selectedRequest]);
 
   // Request handlers
   const handleLogin = (userData) => {
@@ -67,33 +58,24 @@ export const ModeratorDashboard = () => {
   };
 
   const handleApprove = (id) => {
-    setRequests(requests.map(req => 
-      req.id === id ? {
-        ...req, 
-        status: 'approved',
-        notes: req.notes + "\nApproved by moderator on " + new Date().toISOString()
-      } : req
-    ));
+    updateRequest(id, {
+      status: 'approved',
+      notes: (selectedRequest.notes || "") + "\nApproved by moderator on " + new Date().toISOString()
+    });
   };
 
   const handleReject = (id) => {
-    setRequests(requests.map(req => 
-      req.id === id ? {
-        ...req, 
-        status: 'rejected',
-        notes: req.notes + "\nRejected by moderator on " + new Date().toISOString()
-      } : req
-    ));
+    updateRequest(id, {
+      status: 'rejected',
+      notes: (selectedRequest.notes || "") + "\nRejected by moderator on " + new Date().toISOString()
+    });
   };
 
   const handleVerifyOwnership = (id) => {
-    setRequests(requests.map(req =>
-      req.id === id ? {
-        ...req,
-        ownershipVerified: true,
-        notes: req.notes + "\nOwnership verified on " + new Date().toISOString()
-      } : req
-    ));
+    updateRequest(id, {
+      ownershipVerified: true,
+      notes: (selectedRequest.notes || "") + "\nOwnership verified on " + new Date().toISOString()
+    });
   };
 
   // Filter requests
@@ -105,12 +87,12 @@ export const ModeratorDashboard = () => {
   });
 
   // Calculate statistics
-  const stats = {
-    pending: requests.filter(r => r.status === 'pending').length,
-    approved: requests.filter(r => r.status === 'approved').length,
-    rejected: requests.filter(r => r.status === 'rejected').length,
-    highPriority: requests.filter(r => r.priority === 'high' && r.status === 'pending').length
-  };
+  const stats = getStats();
+
+  // File viewer
+  if (viewingFile) {
+    return <FileViewer file={viewingFile} onClose={() => setViewingFile(null)} />;
+  }
 
   // Login page
   if (!user) {
@@ -245,7 +227,15 @@ export const ModeratorDashboard = () => {
             </Button>
             <h1 className="text-xl font-semibold text-foreground">Content Removal Requests</h1>
           </div>
-          <ThemeToggle />
+          <div className="flex items-center gap-4">
+            <Link to="/request">
+              <Button variant="outline" size="sm" className="flex items-center gap-2">
+                <PlusCircle className="h-4 w-4" />
+                New Request
+              </Button>
+            </Link>
+            <ThemeToggle />
+          </div>
         </header>
 
         <main className="flex-1 overflow-auto p-6">
@@ -412,14 +402,22 @@ export const ModeratorDashboard = () => {
                   <CardContent className="space-y-4">
                     <div className="space-y-2">
                       <p className="font-medium text-foreground">Proof of Ownership</p>
-                      <a 
-                        href={selectedRequest.proofOfOwnership} 
-                        target="_blank" 
-                        rel="noopener noreferrer"
-                        className="text-primary hover:underline"
+                      <Button
+                        variant="link"
+                        className="p-0 h-auto text-primary hover:underline"
+                        onClick={() => {
+                          // First try to get the actual file
+                          const file = getFile(selectedRequest.id);
+                          if (file) {
+                            setViewingFile(file);
+                          } else {
+                            // If no file, show an alert
+                            alert("File not available. This may be demo data or the file was not properly uploaded.");
+                          }
+                        }}
                       >
                         {selectedRequest.proofOfOwnership}
-                      </a>
+                      </Button>
                     </div>
                     <div className="space-y-2">
                       <p className="font-medium text-foreground">Content Type</p>
