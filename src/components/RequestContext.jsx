@@ -36,9 +36,122 @@ const initialRequests = [
 // Create context
 const RequestContext = createContext();
 
-// File storage - this will store uploaded files in memory
-// In a real app, you'd use cloud storage
-const fileStorage = new Map();
+// File storage - using IndexedDB to store files persistently
+const setupIndexedDB = async () => {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open('ContentModerationDB', 1);
+    
+    request.onerror = (event) => {
+      console.error("IndexedDB error:", event.target.error);
+      reject(event.target.error);
+    };
+    
+    request.onupgradeneeded = (event) => {
+      const db = event.target.result;
+      
+      // Create an object store for files
+      if (!db.objectStoreNames.contains('files')) {
+        const store = db.createObjectStore('files', { keyPath: 'id' });
+        store.createIndex('requestId', 'requestId', { unique: true });
+      }
+    };
+    
+    request.onsuccess = (event) => {
+      resolve(event.target.result);
+    };
+  });
+};
+
+// File operations
+const saveFile = async (requestId, file) => {
+  try {
+    const db = await setupIndexedDB();
+    return new Promise((resolve, reject) => {
+      // Convert file to ArrayBuffer for storage
+      const reader = new FileReader();
+      reader.readAsArrayBuffer(file);
+      
+      reader.onload = () => {
+        const transaction = db.transaction(['files'], 'readwrite');
+        const store = transaction.objectStore('files');
+        
+        // Store file with metadata
+        const fileData = {
+          id: requestId.toString(),
+          requestId: requestId.toString(),
+          name: file.name,
+          type: file.type,
+          size: file.size,
+          data: reader.result,
+          lastModified: file.lastModified
+        };
+        
+        const request = store.put(fileData);
+        
+        request.onsuccess = () => resolve(fileData);
+        request.onerror = (e) => reject(e.target.error);
+      };
+      
+      reader.onerror = (e) => reject(e.target.error);
+    });
+  } catch (error) {
+    console.error('Error saving file:', error);
+    throw error;
+  }
+};
+
+const getFile = async (requestId) => {
+  try {
+    const db = await setupIndexedDB();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(['files'], 'readonly');
+      const store = transaction.objectStore('files');
+      const request = store.get(requestId.toString());
+      
+      request.onsuccess = (event) => {
+        const fileData = event.target.result;
+        if (!fileData) {
+          resolve(null);
+          return;
+        }
+        
+        // Convert back to File object
+        const file = new File(
+          [fileData.data], 
+          fileData.name, 
+          { 
+            type: fileData.type, 
+            lastModified: fileData.lastModified 
+          }
+        );
+        
+        resolve(file);
+      };
+      
+      request.onerror = (e) => reject(e.target.error);
+    });
+  } catch (error) {
+    console.error('Error getting file:', error);
+    return null;
+  }
+};
+
+const deleteFile = async (requestId) => {
+  try {
+    const db = await setupIndexedDB();
+    return new Promise((resolve, reject) => {
+      const transaction = db.transaction(['files'], 'readwrite');
+      const store = transaction.objectStore('files');
+      const request = store.delete(requestId.toString());
+      
+      request.onsuccess = () => resolve(true);
+      request.onerror = (e) => reject(e.target.error);
+    });
+  } catch (error) {
+    console.error('Error deleting file:', error);
+    return false;
+  }
+};
 
 export const RequestProvider = ({ children }) => {
   // Try to load stored requests from localStorage, or use initial data
@@ -46,8 +159,7 @@ export const RequestProvider = ({ children }) => {
     const storedRequests = localStorage.getItem('removalRequests');
     return storedRequests ? JSON.parse(storedRequests) : initialRequests;
   });
-
-  // We can't store File objects in localStorage, so we only store references
+  
   // Save requests to localStorage whenever they change
   useEffect(() => {
     // Create a version without actual file objects for localStorage
@@ -59,7 +171,7 @@ export const RequestProvider = ({ children }) => {
   }, [requests]);
 
   // Add a new request
-  const addRequest = (request) => {
+  const addRequest = async (request) => {
     const id = Date.now();
     const newRequest = {
       ...request,
@@ -70,9 +182,15 @@ export const RequestProvider = ({ children }) => {
       ownershipVerified: false
     };
     
-    // Store the file in our Map if it exists
+    // Store the file in IndexedDB if it exists
     if (request.proofFile) {
-      fileStorage.set(id.toString(), request.proofFile);
+      try {
+        await saveFile(id, request.proofFile);
+        // Don't store the actual file in the request object
+        delete newRequest.proofFile;
+      } catch (error) {
+        console.error('Error saving file', error);
+      }
     }
     
     setRequests(prevRequests => [...prevRequests, newRequest]);
@@ -80,15 +198,33 @@ export const RequestProvider = ({ children }) => {
   };
 
   // Update a request
-  const updateRequest = (id, updates) => {
+  const updateRequest = async (id, updates) => {
     // If updating the proof file, store it
     if (updates.proofFile) {
-      fileStorage.set(id.toString(), updates.proofFile);
+      try {
+        await saveFile(id, updates.proofFile);
+        // Don't store the actual file in the request object
+        delete updates.proofFile;
+      } catch (error) {
+        console.error('Error updating file', error);
+      }
     }
     
     setRequests(prevRequests => 
       prevRequests.map(req => req.id === id ? { ...req, ...updates } : req)
     );
+  };
+
+  // Delete a request
+  const deleteRequest = async (id) => {
+    // Delete associated file if exists
+    try {
+      await deleteFile(id);
+    } catch (error) {
+      console.error('Error deleting file', error);
+    }
+    
+    setRequests(prevRequests => prevRequests.filter(req => req.id !== id));
   };
 
   // Get request statistics
@@ -101,16 +237,12 @@ export const RequestProvider = ({ children }) => {
     };
   };
 
-  // Get a file by request ID
-  const getFile = (id) => {
-    return fileStorage.get(id.toString());
-  };
-
   return (
     <RequestContext.Provider value={{ 
       requests, 
       addRequest, 
       updateRequest, 
+      deleteRequest,
       getStats,
       getFile 
     }}>

@@ -23,6 +23,11 @@ const TakedownRequestForm = () => {
   const [submitSuccess, setSubmitSuccess] = useState(false);
   const [requestId, setRequestId] = useState(null);
   const [errors, setErrors] = useState({});
+  const [fileError, setFileError] = useState('');
+  
+  // Constants for file validation
+  const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB in bytes
+  const ALLOWED_FILE_TYPES = ['.pdf', '.jpg', '.jpeg', '.png', '.txt'];
   
   // Form validation
   const validate = () => {
@@ -42,46 +47,69 @@ const TakedownRequestForm = () => {
   };
   
   // Handle form submission
-  const handleSubmit = (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
     
     if (!validate()) return;
     
     setIsSubmitting(true);
     
-    // Create request object
-    const newRequest = {
-      email,
-      url,
-      description,
-      proofOfOwnership: proofFile ? proofFile.name : 'ownership-proof.pdf',
-      proofFile: proofFile, // Store the actual file object
-      contentType,
-      priority
-    };
-    
-    // Add the request to the context
-    const createdRequest = addRequest(newRequest);
-    setRequestId(createdRequest.id);
-    
-    setIsSubmitting(false);
-    setSubmitSuccess(true);
-    
-    // Reset form after 3 seconds
-    setTimeout(() => {
-      setEmail('');
-      setUrl('');
-      setDescription('');
-      setContentType('website');
-      setPriority('medium');
-      setProofFile(null);
-      setSubmitSuccess(false);
-    }, 3000);
+    try {
+      // Create request object
+      const newRequest = {
+        email,
+        url,
+        description,
+        proofOfOwnership: proofFile ? proofFile.name : 'ownership-proof.pdf',
+        proofFile, // Store the actual file object
+        contentType,
+        priority
+      };
+      
+      // Add the request to the context (this now properly saves the file)
+      const createdRequest = await addRequest(newRequest);
+      setRequestId(createdRequest.id);
+      
+      setSubmitSuccess(true);
+      
+      // Reset form after 5 seconds
+      setTimeout(() => {
+        setEmail('');
+        setUrl('');
+        setDescription('');
+        setContentType('website');
+        setPriority('medium');
+        setProofFile(null);
+        setSubmitSuccess(false);
+      }, 5000);
+    } catch (error) {
+      console.error("Error submitting form:", error);
+      alert("An error occurred while submitting your request. Please try again.");
+    } finally {
+      setIsSubmitting(false);
+    }
   };
   
   const handleFileChange = (e) => {
+    setFileError('');
+    
     if (e.target.files && e.target.files[0]) {
-      setProofFile(e.target.files[0]);
+      const file = e.target.files[0];
+      
+      // Validate file size
+      if (file.size > MAX_FILE_SIZE) {
+        setFileError(`File is too large. Maximum size is ${MAX_FILE_SIZE / (1024 * 1024)}MB`);
+        return;
+      }
+      
+      // Validate file type
+      const fileExtension = '.' + file.name.split('.').pop().toLowerCase();
+      if (!ALLOWED_FILE_TYPES.includes(fileExtension)) {
+        setFileError(`Invalid file type. Allowed types: ${ALLOWED_FILE_TYPES.join(', ')}`);
+        return;
+      }
+      
+      setProofFile(file);
     }
   };
   
@@ -129,7 +157,12 @@ const TakedownRequestForm = () => {
           <h1 className="text-xl font-semibold text-foreground">Content Removal Request</h1>
         </div>
         <div className="flex items-center gap-4">
-          <Link to="/dashboard" className="text-sm text-primary hover:underline">Moderator Login</Link>
+          <Link to="/" className="text-sm text-primary hover:underline">
+            Home
+          </Link>
+          <Link to="/dashboard" className="text-sm text-primary hover:underline">
+            Moderator Login
+          </Link>
           <ThemeToggle />
         </div>
       </header>
@@ -239,7 +272,9 @@ const TakedownRequestForm = () => {
                   <label className="text-sm font-medium text-foreground">
                     Proof of Ownership
                   </label>
-                  <div className={`border-2 border-dashed rounded-md p-6 text-center ${errors.proofFile ? 'border-destructive' : 'border-border'}`}>
+                  <div className={`border-2 border-dashed rounded-md p-6 text-center ${
+                    errors.proofFile || fileError ? 'border-destructive' : 'border-border'
+                  }`}>
                     <div className="space-y-2">
                       <div className="flex justify-center">
                         <Upload className="h-8 w-8 text-muted-foreground" />
@@ -271,6 +306,12 @@ const TakedownRequestForm = () => {
                     <p className="text-sm text-destructive flex items-center gap-1">
                       <AlertCircle className="h-3 w-3" />
                       {errors.proofFile}
+                    </p>
+                  )}
+                  {fileError && (
+                    <p className="text-sm text-destructive flex items-center gap-1">
+                      <AlertCircle className="h-3 w-3" />
+                      {fileError}
                     </p>
                   )}
                 </div>

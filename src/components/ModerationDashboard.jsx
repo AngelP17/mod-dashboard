@@ -1,8 +1,9 @@
 // src/components/ModerationDashboard.jsx
 import React, { useState, useEffect } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { ThemeToggle } from './ThemeToggle';
 import { useRequests } from './RequestContext';
+import { useAuth } from './AuthContext';
 import FileViewer from './FileViewer';
 
 import { 
@@ -17,23 +18,29 @@ import {
   Settings,
   LogOut,
   Menu,
-  PlusCircle
+  PlusCircle,
+  Home
 } from 'lucide-react';
 import { Button } from './ui/Button';
 import { Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter } from './ui/Card';
 import { Input } from './ui/Input';
 import { DropdownMenu, DropdownMenuTrigger, DropdownMenuContent, DropdownMenuItem } from './ui/DropdownMenu';
 
-
 export const ModeratorDashboard = () => {
+  // Auth and navigation
+  const { user, login, logout } = useAuth();
+  
   // State management
-  const [user, setUser] = useState(null);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
-  const { requests, updateRequest, getStats, getFile } = useRequests();
+  const { requests, updateRequest, getStats, getFile, deleteRequest } = useRequests();
   const [selectedRequest, setSelectedRequest] = useState(null);
   const [filterStatus, setFilterStatus] = useState('all');
   const [searchTerm, setSearchTerm] = useState('');
   const [viewingFile, setViewingFile] = useState(null);
+  const [loginEmail, setLoginEmail] = useState('');
+  const [loginPassword, setLoginPassword] = useState('');
+  const [loginError, setLoginError] = useState('');
+  const [isLoading, setIsLoading] = useState(false);
 
   // Update selectedRequest when requests change
   useEffect(() => {
@@ -48,33 +55,59 @@ export const ModeratorDashboard = () => {
   }, [requests, selectedRequest]);
 
   // Request handlers
-  const handleLogin = (userData) => {
-    setUser(userData);
+  const handleLoginSubmit = async (e) => {
+    e.preventDefault();
+    setIsLoading(true);
+    setLoginError('');
+    
+    // Simulate network delay for a more realistic login experience
+    setTimeout(() => {
+      const result = login(loginEmail, loginPassword);
+      
+      if (result.success) {
+        // Reset form
+        setLoginEmail('');
+        setLoginPassword('');
+      } else {
+        setLoginError(result.error);
+      }
+      
+      setIsLoading(false);
+    }, 800);
   };
 
   const handleLogout = () => {
-    setUser(null);
+    logout();
     setSelectedRequest(null);
   };
 
   const handleApprove = (id) => {
     updateRequest(id, {
       status: 'approved',
-      notes: (selectedRequest.notes || "") + "\nApproved by moderator on " + new Date().toISOString()
+      notes: (selectedRequest.notes || "") + `\nApproved by ${user.name} on ${new Date().toISOString()}`
     });
   };
 
   const handleReject = (id) => {
     updateRequest(id, {
       status: 'rejected',
-      notes: (selectedRequest.notes || "") + "\nRejected by moderator on " + new Date().toISOString()
+      notes: (selectedRequest.notes || "") + `\nRejected by ${user.name} on ${new Date().toISOString()}`
     });
+  };
+  
+  const handleDelete = (id) => {
+    if (window.confirm('Are you sure you want to delete this request? This action cannot be undone.')) {
+      deleteRequest(id);
+      if (selectedRequest && selectedRequest.id === id) {
+        setSelectedRequest(null);
+      }
+    }
   };
 
   const handleVerifyOwnership = (id) => {
     updateRequest(id, {
       ownershipVerified: true,
-      notes: (selectedRequest.notes || "") + "\nOwnership verified on " + new Date().toISOString()
+      notes: (selectedRequest.notes || "") + `\nOwnership verified by ${user.name} on ${new Date().toISOString()}`
     });
   };
 
@@ -102,17 +135,27 @@ export const ModeratorDashboard = () => {
         <div className="absolute top-4 right-4">
           <ThemeToggle />
         </div>
-  
+        
+        {/* Back Home Button */}
+        <div className="absolute top-4 left-4">
+          <Link to="/">
+            <Button variant="outline" size="sm" className="flex items-center gap-2">
+              <Home className="h-4 w-4" />
+              Back to Home
+            </Button>
+          </Link>
+        </div>
+
         <div className="w-full max-w-sm space-y-4 text-center">
+          <div className="flex justify-center mb-4">
+            <Shield className="h-12 w-12 text-primary" />
+          </div>
           <h1 className="text-2xl font-bold text-foreground">Content Moderation System</h1>
           <p className="text-muted-foreground">Login to access the dashboard</p>
           
           {/* Login Form */}
           <form 
-            onSubmit={(e) => {
-              e.preventDefault();
-              handleLogin({ name: 'Admin User', role: 'moderator' });
-            }}
+            onSubmit={handleLoginSubmit}
             className="space-y-4 rounded-lg bg-card p-6 shadow-sm border border-border"
           >
             <div className="space-y-2">
@@ -121,6 +164,8 @@ export const ModeratorDashboard = () => {
                 type="email" 
                 required 
                 placeholder="email@example.com"
+                value={loginEmail}
+                onChange={(e) => setLoginEmail(e.target.value)}
                 className="w-full bg-background text-foreground"
               />
             </div>
@@ -130,22 +175,39 @@ export const ModeratorDashboard = () => {
               <Input 
                 type="password" 
                 required
+                value={loginPassword}
+                onChange={(e) => setLoginPassword(e.target.value)}
                 className="w-full bg-background text-foreground"
               />
             </div>
+            
+            {loginError && (
+              <div className="text-sm text-destructive flex items-center gap-2">
+                <AlertCircle className="h-4 w-4" />
+                {loginError}
+              </div>
+            )}
             
             <Button 
               type="submit" 
               variant="default"
               className="w-full"
+              disabled={isLoading}
             >
-              Login
+              {isLoading ? 'Logging in...' : 'Login'}
             </Button>
+            
+            <div className="pt-2 text-xs text-muted-foreground">
+              <p>Demo Accounts:</p>
+              <p>admin@example.com / admin123</p>
+              <p>moderator@example.com / mod123</p>
+            </div>
           </form>
         </div>
       </div>
     );
   }
+  
   // Main dashboard
   return (
     <div className="flex min-h-screen bg-background">
@@ -176,10 +238,12 @@ export const ModeratorDashboard = () => {
               <Users className="h-4 w-4" />
               Requests
             </Button>
-            <Button variant="ghost" className="w-full justify-start gap-2 text-muted-foreground hover:text-foreground">
-              <Settings className="h-4 w-4" />
-              Settings
-            </Button>
+            <Link to="/settings">
+              <Button variant="ghost" className="w-full justify-start gap-2 text-muted-foreground hover:text-foreground">
+                <Settings className="h-4 w-4" />
+                Settings
+              </Button>
+            </Link>
           </nav>
           
           <hr className="border-t border-border" />
@@ -228,6 +292,12 @@ export const ModeratorDashboard = () => {
             <h1 className="text-xl font-semibold text-foreground">Content Removal Requests</h1>
           </div>
           <div className="flex items-center gap-4">
+            <Link to="/">
+              <Button variant="outline" size="sm" className="flex items-center gap-2">
+                <Home className="h-4 w-4" />
+                Home
+              </Button>
+            </Link>
             <Link to="/request">
               <Button variant="outline" size="sm" className="flex items-center gap-2">
                 <PlusCircle className="h-4 w-4" />
@@ -353,39 +423,45 @@ export const ModeratorDashboard = () => {
                 
                 <CardContent>
                   <div className="space-y-4">
-                    {filteredRequests.map(request => (
-                      <div
-                        key={request.id}
-                        className={`flex cursor-pointer items-center gap-4 rounded-lg border border-border p-4 transition-colors hover:bg-accent/10 ${
-                          selectedRequest?.id === request.id ? 'border-primary bg-accent/10' : ''
-                        }`}
-                        onClick={() => setSelectedRequest(request)}
-                      >
-                        <div className="flex-1 space-y-1">
-                          <p className="font-medium text-foreground">{request.email}</p>
-                          <p className="text-sm text-muted-foreground break-all">{request.url}</p>
-                          <div className="flex items-center gap-2 text-sm">
-                            <Clock className="h-3 w-3 text-muted-foreground" />
-                            <span className="text-muted-foreground">
-                              {new Date(request.timestamp).toLocaleString()}
-                            </span>
+                    {filteredRequests.length === 0 ? (
+                      <div className="text-center py-8 text-muted-foreground">
+                        No requests found. Try changing your filters.
+                      </div>
+                    ) : (
+                      filteredRequests.map(request => (
+                        <div
+                          key={request.id}
+                          className={`flex cursor-pointer items-center gap-4 rounded-lg border border-border p-4 transition-colors hover:bg-accent/10 ${
+                            selectedRequest?.id === request.id ? 'border-primary bg-accent/10' : ''
+                          }`}
+                          onClick={() => setSelectedRequest(request)}
+                        >
+                          <div className="flex-1 space-y-1">
+                            <p className="font-medium text-foreground">{request.email}</p>
+                            <p className="text-sm text-muted-foreground break-all">{request.url}</p>
+                            <div className="flex items-center gap-2 text-sm">
+                              <Clock className="h-3 w-3 text-muted-foreground" />
+                              <span className="text-muted-foreground">
+                                {new Date(request.timestamp).toLocaleString()}
+                              </span>
+                            </div>
+                          </div>
+                          <div className={`flex items-center gap-2 ${
+                            request.status === 'pending' ? 'text-yellow-500' :
+                            request.status === 'approved' ? 'text-green-500' :
+                            'text-destructive'
+                          }`}>
+                            {request.status === 'pending' ? <Clock className="h-4 w-4" /> :
+                             request.status === 'approved' ? <CheckCircle2 className="h-4 w-4" /> :
+                             <XCircle className="h-4 w-4" />}
+                            <span className="text-sm capitalize">{request.status}</span>
+                            {request.priority === 'high' && (
+                              <AlertCircle className="h-4 w-4 text-orange-500" />
+                            )}
                           </div>
                         </div>
-                        <div className={`flex items-center gap-2 ${
-                          request.status === 'pending' ? 'text-yellow-500' :
-                          request.status === 'approved' ? 'text-green-500' :
-                          'text-destructive'
-                        }`}>
-                          {request.status === 'pending' ? <Clock className="h-4 w-4" /> :
-                           request.status === 'approved' ? <CheckCircle2 className="h-4 w-4" /> :
-                           <XCircle className="h-4 w-4" />}
-                          <span className="text-sm capitalize">{request.status}</span>
-                          {request.priority === 'high' && (
-                            <AlertCircle className="h-4 w-4 text-orange-500" />
-                          )}
-                        </div>
-                      </div>
-                    ))}
+                      ))
+                    )}
                   </div>
                 </CardContent>
               </Card>
@@ -405,14 +481,19 @@ export const ModeratorDashboard = () => {
                       <Button
                         variant="link"
                         className="p-0 h-auto text-primary hover:underline"
-                        onClick={() => {
-                          // First try to get the actual file
-                          const file = getFile(selectedRequest.id);
-                          if (file) {
-                            setViewingFile(file);
-                          } else {
-                            // If no file, show an alert
-                            alert("File not available. This may be demo data or the file was not properly uploaded.");
+                        onClick={async () => {
+                          try {
+                            // Attempt to fetch the file using the async getFile
+                            const file = await getFile(selectedRequest.id);
+                            if (file) {
+                              setViewingFile(file);
+                            } else {
+                              // If no file, show an alert
+                              alert("File not available. This may be demo data or the file was not properly uploaded.");
+                            }
+                          } catch (error) {
+                            console.error("Error fetching file:", error);
+                            alert("An error occurred while retrieving the file.");
                           }
                         }}
                       >
@@ -440,28 +521,39 @@ export const ModeratorDashboard = () => {
                       </p>
                     </div>
                   </CardContent>
-                  <CardFooter className="flex justify-end gap-2">
-                    <Button 
-                      variant="outline" 
-                      onClick={() => handleVerifyOwnership(selectedRequest.id)}
-                      disabled={selectedRequest.ownershipVerified}
-                    >
-                      Verify Ownership
-                    </Button>
-                    <Button 
-                      variant="destructive" 
-                      onClick={() => handleReject(selectedRequest.id)}
-                      disabled={selectedRequest.status === 'rejected'}
-                    >
-                      Reject
-                    </Button>
-                    <Button 
-                      variant="default" 
-                      onClick={() => handleApprove(selectedRequest.id)}
-                      disabled={selectedRequest.status === 'approved'}
-                    >
-                      Approve
-                    </Button>
+                  <CardFooter className="flex justify-between gap-2">
+                    <div>
+                      <Button 
+                        variant="outline" 
+                        className="text-destructive hover:bg-destructive/10"
+                        onClick={() => handleDelete(selectedRequest.id)}
+                      >
+                        Delete Request
+                      </Button>
+                    </div>
+                    <div className="flex gap-2">
+                      <Button 
+                        variant="outline" 
+                        onClick={() => handleVerifyOwnership(selectedRequest.id)}
+                        disabled={selectedRequest.ownershipVerified}
+                      >
+                        Verify Ownership
+                      </Button>
+                      <Button 
+                        variant="destructive" 
+                        onClick={() => handleReject(selectedRequest.id)}
+                        disabled={selectedRequest.status === 'rejected'}
+                      >
+                        Reject
+                      </Button>
+                      <Button 
+                        variant="default" 
+                        onClick={() => handleApprove(selectedRequest.id)}
+                        disabled={selectedRequest.status === 'approved'}
+                      >
+                        Approve
+                      </Button>
+                    </div>
                   </CardFooter>
                 </Card>
               )}
