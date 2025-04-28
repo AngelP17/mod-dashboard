@@ -196,12 +196,6 @@ export const ModeratorDashboard = () => {
             >
               {isLoading ? 'Logging in...' : 'Login'}
             </Button>
-            
-            <div className="pt-2 text-xs text-muted-foreground">
-              <p>Demo Accounts:</p>
-              <p>admin@example.com / admin123</p>
-              <p>moderator@example.com / mod123</p>
-            </div>
           </form>
         </div>
       </div>
